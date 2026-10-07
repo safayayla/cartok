@@ -51,6 +51,7 @@ jobs:
 
       - name: Generate Android platform project (only if missing)
         run: |
+          set +e
           if [ ! -d "android" ]; then
             echo "mobile/android/ does not exist — generating it with the real Flutter CLI."
             # --project-name must stay "cartok" to match the existing pubspec.yaml
@@ -60,7 +61,13 @@ jobs:
             # produces "com.cartok.cartok", not the desired "com.cartok.app"; the
             # next step retargets just the applicationId/bundle id string, which
             # is independent of the Dart package name and safe to change.
-            flutter create . --platforms=android --org com.cartok --project-name cartok
+            flutter create . --platforms=android --org com.cartok --project-name cartok > /tmp/create_android.log 2>&1
+            ec=$?
+            cat /tmp/create_android.log
+            if [ $ec -ne 0 ]; then
+              echo "::error::flutter create (android) failed with exit $ec. Last output:%0A$(tail -c 3000 /tmp/create_android.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+              exit $ec
+            fi
           else
             echo "mobile/android/ already exists — leaving it as-is."
           fi
@@ -77,16 +84,48 @@ jobs:
           grep -E "applicationId|namespace" "$GRADLE_FILE" || echo "::warning::Could not find applicationId in $GRADLE_FILE — verify manually."
 
       - name: flutter pub get
-        run: flutter pub get
+        run: |
+          set +e
+          flutter pub get > /tmp/pubget.log 2>&1
+          ec=$?
+          cat /tmp/pubget.log
+          if [ $ec -ne 0 ]; then
+            echo "::error::flutter pub get failed with exit $ec. Last output:%0A$(tail -c 3000 /tmp/pubget.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit $ec
+          fi
 
       - name: flutter analyze
-        run: flutter analyze
+        run: |
+          set +e
+          flutter analyze > /tmp/analyze.log 2>&1
+          ec=$?
+          cat /tmp/analyze.log
+          if [ $ec -ne 0 ]; then
+            echo "::error::flutter analyze failed with exit $ec. Last output:%0A$(tail -c 3000 /tmp/analyze.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit $ec
+          fi
 
       - name: flutter test
-        run: flutter test
+        run: |
+          set +e
+          flutter test > /tmp/test.log 2>&1
+          ec=$?
+          cat /tmp/test.log
+          if [ $ec -ne 0 ]; then
+            echo "::error::flutter test failed with exit $ec. Last output:%0A$(tail -c 3000 /tmp/test.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit $ec
+          fi
 
       - name: flutter build apk --debug
-        run: flutter build apk --debug
+        run: |
+          set +e
+          flutter build apk --debug > /tmp/apkdebug.log 2>&1
+          ec=$?
+          cat /tmp/apkdebug.log
+          if [ $ec -ne 0 ]; then
+            echo "::error::flutter build apk --debug failed with exit $ec. Last output:%0A$(tail -c 3000 /tmp/apkdebug.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit $ec
+          fi
 
       - name: flutter build apk --release (best effort — no release signing configured)
         id: release_apk
@@ -125,12 +164,19 @@ jobs:
 
       - name: Generate iOS platform project (only if missing)
         run: |
+          set +e
           if [ ! -d "ios" ]; then
             echo "mobile/ios/ does not exist — generating it with the real Flutter CLI."
             # Same reasoning as the Android job: --project-name stays "cartok" to
             # preserve existing package:cartok/... imports; the bundle identifier
             # is retargeted to com.cartok.app in the next step instead.
-            flutter create . --platforms=ios --org com.cartok --project-name cartok
+            flutter create . --platforms=ios --org com.cartok --project-name cartok > /tmp/create_ios.log 2>&1
+            ec=$?
+            cat /tmp/create_ios.log
+            if [ $ec -ne 0 ]; then
+              echo "::error::flutter create (ios) failed with exit $ec. Last output:%0A$(tail -c 3000 /tmp/create_ios.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+              exit $ec
+            fi
           else
             echo "mobile/ios/ already exists — leaving it as-is."
           fi
@@ -159,7 +205,15 @@ jobs:
         run: flutter test
 
       - name: flutter build ios --no-codesign (unsigned validation build — not an .ipa)
-        run: flutter build ios --no-codesign
+        run: |
+          set +e
+          flutter build ios --no-codesign > /tmp/iosbuild.log 2>&1
+          ec=$?
+          cat /tmp/iosbuild.log
+          if [ $ec -ne 0 ]; then
+            echo "::error::flutter build ios --no-codesign (unsigned validation build — not an .ipa) failed with exit $ec. Last output:%0A$(tail -c 3000 /tmp/iosbuild.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit $ec
+          fi
 
       - name: Upload generated iOS project (for inspection / committing back)
         uses: actions/upload-artifact@v4
