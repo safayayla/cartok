@@ -1,0 +1,534 @@
+// Cartok - Core data model for an automotive community platform.
+// Auth/User/Garage/Vehicle is the spine; Forum, Marketplace, Events,
+// Notifications, Discover, and Messaging are built on top of it. There is
+// no video domain — an earlier short-video product direction was explored
+// and has since been dropped (see ARCHITECTURE.md).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  MODERATOR
+  ADMIN
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+model User {
+  id                String             @id @default(uuid())
+  email             String             @unique
+  emailVerifiedAt   DateTime?
+  username          String             @unique
+  passwordHash      String
+  displayName       String
+  avatarUrl         String?
+  bio               String?
+  role              Role               @default(USER)
+  verification      VerificationStatus @default(UNVERIFIED)
+  isActive          Boolean            @default(true)
+  isBanned          Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  refreshTokens     RefreshToken[]
+  garages           Garage[]
+  followers         GarageFollower[]   @relation("UserFollows")
+  auditLogs         AuditLog[]
+  forumThreads      ForumThread[]
+  forumPosts        ForumPost[]
+  forumVotes        ForumVote[]
+  notifications     Notification[]    @relation("NotificationRecipient")
+  notificationsSent Notification[]    @relation("NotificationActor")
+  hostedEvents      Event[]
+  eventRsvps        EventRsvp[]
+  eventCheckIns     EventCheckIn[]
+  listings          Listing[]
+  listingFavorites  ListingFavorite[]
+  listingBids       ListingBid[]
+  threadBookmarks   ThreadBookmark[]
+  vehicleBookmarks  VehicleBookmark[]
+  vehicleLikes      VehicleLike[]
+  vehicleComments   VehicleComment[]
+  userFollowing     UserFollow[]      @relation("Follower")
+  userFollowers     UserFollow[]      @relation("Following")
+  conversations     ConversationParticipant[]
+  messages          Message[]
+
+}
+
+model UserFollow {
+  id          String   @id @default(uuid())
+  followerId  String
+  follower    User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+}
+
+model RefreshToken {
+  id          String    @id @default(uuid())
+  tokenHash   String    @unique
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent   String?
+  ipAddress   String?
+  revokedAt   DateTime?
+  replacedBy  String?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([userId, revokedAt])
+}
+
+model Garage {
+  id          String            @id @default(uuid())
+  ownerId     String
+  owner       User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String            @unique
+  description String?
+  coverUrl    String?
+  isPublic    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  vehicles    Vehicle[]
+  followers   GarageFollower[]
+
+  @@index([ownerId])
+}
+
+model GarageFollower {
+  id        String   @id @default(uuid())
+  garageId  String
+  garage    Garage   @relation(fields: [garageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("UserFollows", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([garageId, userId])
+  @@index([userId])
+}
+
+model Vehicle {
+  id                 String              @id @default(uuid())
+  garageId           String
+  garage             Garage              @relation(fields: [garageId], references: [id], onDelete: Cascade)
+  vin                String?
+  make               String
+  model              String
+  year               Int
+  trim               String?
+  nickname           String?
+  odometer           Int?
+  odometerUnit       String              @default("mi")
+  isPublic            Boolean            @default(true)
+  verificationStatus VerificationStatus  @default(UNVERIFIED)
+  vinDecodedData     Json?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  listings           Listing[]
+  likes              VehicleLike[]
+  comments           VehicleComment[]
+  bookmarks          VehicleBookmark[]
+
+  @@index([garageId])
+  @@index([vin])
+}
+
+model VehicleLike {
+  id        String   @id @default(uuid())
+  vehicleId String
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([vehicleId, userId])
+  @@index([userId])
+}
+
+model VehicleComment {
+  id        String   @id @default(uuid())
+  vehicleId String
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content   String
+  isDeleted Boolean  @default(false)
+  editedAt  DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([vehicleId, createdAt])
+  @@index([authorId])
+}
+
+model Listing {
+  id            String          @id @default(uuid())
+  sellerId      String
+  seller        User            @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  vehicleId     String?
+  vehicle       Vehicle?        @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  type          ListingType
+  title         String
+  description   String
+  priceCents    Int // stored in cents to avoid float rounding errors on money
+  currency      String          @default("USD")
+  condition     ListingCondition?
+  status        ListingStatus   @default(ACTIVE)
+  location      String?
+  viewCount     Int             @default(0)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  images        ListingImage[]
+  favorites     ListingFavorite[]
+
+  @@index([sellerId])
+  @@index([status, type, createdAt])
+  @@index([vehicleId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Forum
+// ---------------------------------------------------------------------------
+
+model ForumCategory {
+  id          String       @id @default(uuid())
+  name        String
+  slug        String       @unique
+  description String?
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now())
+
+  threads     ForumThread[]
+
+}
+
+model ForumThread {
+  id          String        @id @default(uuid())
+  categoryId  String
+  category    ForumCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  title       String
+  slug        String
+  isPinned    Boolean       @default(false)
+  isLocked    Boolean       @default(false)
+  viewCount   Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  posts       ForumPost[]
+  bookmarks   ThreadBookmark[]
+
+  @@unique([categoryId, slug])
+  @@index([categoryId, isPinned, updatedAt])
+  @@index([authorId])
+}
+
+model ForumPost {
+  id          String       @id @default(uuid())
+  threadId    String
+  thread      ForumThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentId    String?
+  parent      ForumPost?   @relation("PostReplies", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies     ForumPost[]  @relation("PostReplies")
+  content     String
+  isDeleted   Boolean      @default(false)
+  editedAt    DateTime?
+  score       Int          @default(0)
+  createdAt   DateTime     @default(now())
+
+  votes       ForumVote[]
+
+  @@index([threadId, createdAt])
+  @@index([authorId])
+  @@index([parentId])
+}
+
+model ForumVote {
+  id        String    @id @default(uuid())
+  postId    String
+  post      ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  value     Int        // +1 or -1
+  createdAt DateTime  @default(now())
+
+  @@unique([postId, userId])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+enum NotificationType {
+  GARAGE_FOLLOW
+  USER_FOLLOW
+  THREAD_REPLY
+  POST_MENTION
+  POST_VOTE
+  VEHICLE_VERIFIED
+  VEHICLE_LIKE
+  VEHICLE_COMMENT
+  EVENT_RSVP
+  EVENT_REMINDER
+  EVENT_CANCELLED
+  SYSTEM
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String
+  recipient   User             @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actorId     String?
+  actor       User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  type        NotificationType
+  entityType  String?          // e.g. "ForumThread", "Garage", "Vehicle"
+  entityId    String?
+  message     String
+  isRead      Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  @@index([recipientId, isRead])
+  @@index([recipientId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+// "Cars & Coffee" and "Drive Together" are event *types*, not separate
+// systems — both are meetups with a place, a time, and an RSVP/check-in
+// flow. Modeling them as one Event with a `type` discriminator avoids
+// building three near-identical modules with the same bugs to fix three times.
+
+enum EventType {
+  CARS_AND_COFFEE
+  DRIVE_TOGETHER
+  MEETUP
+  TRACK_DAY
+  OTHER
+}
+
+enum RsvpStatus {
+  GOING
+  INTERESTED
+  NOT_GOING
+}
+
+model Event {
+  id           String      @id @default(uuid())
+  hostId       String
+  host         User        @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  type         EventType
+  title        String
+  description  String?
+  locationName String
+  latitude     Float?
+  longitude    Float?
+  startTime    DateTime
+  endTime      DateTime?
+  capacity     Int?
+  checkInCode  String      @unique // opaque code embedded in the event's QR check-in
+  isCancelled  Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  rsvps        EventRsvp[]
+  checkIns     EventCheckIn[]
+
+  @@index([startTime])
+  @@index([hostId])
+}
+
+model EventRsvp {
+  id        String     @id @default(uuid())
+  eventId   String
+  event     Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    RsvpStatus
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([eventId, userId])
+  @@index([eventId, status])
+  @@index([userId])
+}
+
+model EventCheckIn {
+  id        String   @id @default(uuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace
+// ---------------------------------------------------------------------------
+
+enum ListingType {
+  CAR
+  MOTORCYCLE
+  PART
+  ACCESSORY
+  WHEELS
+  TIRES
+  TOOLS
+  ELECTRONICS
+  GARAGE_EQUIPMENT
+  TRANSPORT
+  WANTED
+}
+
+enum ListingCondition {
+  NEW
+  USED
+  FOR_PARTS
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  DRAFT
+  REMOVED
+}
+
+model ListingImage {
+  id        String   @id @default(uuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  url       String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([listingId])
+}
+
+model ListingFavorite {
+  id        String   @id @default(uuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([listingId, userId])
+  @@index([userId])
+}
+
+model ThreadBookmark {
+  id        String      @id @default(uuid())
+  threadId  String
+  thread    ForumThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@unique([threadId, userId])
+  @@index([userId])
+}
+
+model VehicleBookmark {
+  id        String   @id @default(uuid())
+  vehicleId String
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([vehicleId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Messaging
+// ---------------------------------------------------------------------------
+// Scoped to 1:1 direct messages for this phase — isGroup is kept for forward
+// compatibility but the API only exposes "get or create a DM with user X"
+// today, not arbitrary group creation. Group messaging is real future work,
+// not silently half-implemented here.
+
+model Conversation {
+  id        String   @id @default(uuid())
+  isGroup   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  // Bumped whenever a new message is sent - lets the conversation list be
+  // sorted "most recently active first" with a single indexed column
+  // rather than a join + aggregate over messages on every list request.
+  updatedAt DateTime @updatedAt
+
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([updatedAt])
+}
+
+model ConversationParticipant {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Null until the participant has read anything; comparing this against
+  // the conversation's most recent message timestamp is how unread state
+  // is computed, rather than a separate per-message read-receipt table.
+  lastReadAt     DateTime?
+  joinedAt       DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  content        String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}

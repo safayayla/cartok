@@ -1,0 +1,169 @@
+name: Flutter Build (Android / iOS)
+
+# Cartok's Flutter SDK cannot be installed in the restricted sandbox this
+# project was developed in (pub.dev / storage.googleapis.com are blocked
+# there). This workflow runs on GitHub's own runners, which have normal
+# internet access, so it is the real place `flutter create`, `flutter
+# analyze`, `flutter test`, and `flutter build apk` actually execute.
+#
+# It does NOT touch backend/** (see backend-ci.yml for that) and it does
+# NOT overwrite mobile/lib, mobile/test, or mobile/pubspec.yaml — platform
+# generation only adds the missing android/ and ios/ folders alongside the
+# existing Dart source.
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ["mobile/**", ".github/workflows/flutter-build.yml"]
+  pull_request:
+    branches: [main, develop]
+    paths: ["mobile/**", ".github/workflows/flutter-build.yml"]
+  workflow_dispatch: {}
+
+# Pinned, not "stable" floating: the pubspec's dependencies (share_plus
+# ^13.1.0 in particular) need a reasonably recent Dart SDK. 3.24.3 is a
+# known-good stable release shipping Dart 3.5.3, which satisfies the
+# pubspec's `sdk: ">=3.4.0 <4.0.0"` constraint without jumping to
+# whatever the newest Flutter release happens to be when this runs.
+env:
+  FLUTTER_VERSION: "3.24.3"
+  FLUTTER_CHANNEL: "stable"
+  ANDROID_APP_ID: "com.cartok.app"
+
+jobs:
+  android:
+    name: Android (generate, analyze, test, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Generate Android platform project (only if missing)
+        run: |
+          if [ ! -d "android" ]; then
+            echo "mobile/android/ does not exist — generating it with the real Flutter CLI."
+            # --project-name must stay "cartok" to match the existing pubspec.yaml
+            # name (package:cartok/... imports throughout lib/ and test/ depend on
+            # it) — changing it would break every existing import. Flutter's
+            # convention makes applicationId = <org>.<project-name>, so this
+            # produces "com.cartok.cartok", not the desired "com.cartok.app"; the
+            # next step retargets just the applicationId/bundle id string, which
+            # is independent of the Dart package name and safe to change.
+            flutter create . --platforms=android --org com.cartok --project-name cartok
+          else
+            echo "mobile/android/ already exists — leaving it as-is."
+          fi
+
+      - name: Set Android application ID to com.cartok.app
+        run: |
+          GRADLE_FILE="android/app/build.gradle.kts"
+          [ -f "$GRADLE_FILE" ] || GRADLE_FILE="android/app/build.gradle"
+          if [ -f "$GRADLE_FILE" ] && grep -q "com.cartok.cartok" "$GRADLE_FILE"; then
+            sed -i 's/com\.cartok\.cartok/com.cartok.app/g' "$GRADLE_FILE"
+            echo "Rewrote applicationId/namespace in $GRADLE_FILE to ${{ env.ANDROID_APP_ID }}"
+          fi
+          echo "Checking $GRADLE_FILE for applicationId"
+          grep -E "applicationId|namespace" "$GRADLE_FILE" || echo "::warning::Could not find applicationId in $GRADLE_FILE — verify manually."
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter analyze
+        run: flutter analyze
+
+      - name: flutter test
+        run: flutter test
+
+      - name: flutter build apk --debug
+        run: flutter build apk --debug
+
+      - name: flutter build apk --release (best effort — no release signing configured)
+        id: release_apk
+        continue-on-error: true
+        run: flutter build apk --release
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cartok-debug-apk
+          path: mobile/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload release APK artifact (if it built)
+        if: steps.release_apk.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cartok-release-apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: warn
+
+  ios-project:
+    name: iOS (generate + validate project, macOS runner required for any build)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Generate iOS platform project (only if missing)
+        run: |
+          if [ ! -d "ios" ]; then
+            echo "mobile/ios/ does not exist — generating it with the real Flutter CLI."
+            # Same reasoning as the Android job: --project-name stays "cartok" to
+            # preserve existing package:cartok/... imports; the bundle identifier
+            # is retargeted to com.cartok.app in the next step instead.
+            flutter create . --platforms=ios --org com.cartok --project-name cartok
+          else
+            echo "mobile/ios/ already exists — leaving it as-is."
+          fi
+
+      - name: Set iOS bundle identifier and display name
+        run: |
+          PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
+          if [ -f "$PBXPROJ" ] && grep -q "com.cartok.cartok" "$PBXPROJ"; then
+            sed -i '' 's/com\.cartok\.cartok/com.cartok.app/g' "$PBXPROJ"
+            echo "Rewrote PRODUCT_BUNDLE_IDENTIFIER in $PBXPROJ to ${{ env.ANDROID_APP_ID }} (and .RunnerTests variant)"
+          fi
+          PLIST="ios/Runner/Info.plist"
+          if [ -f "$PLIST" ] && grep -q "CFBundleDisplayName" "$PLIST"; then
+            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Cartok" "$PLIST" || true
+            /usr/libexec/PlistBuddy -c "Set :CFBundleName Cartok" "$PLIST" || true
+          fi
+          grep -E "PRODUCT_BUNDLE_IDENTIFIER" "$PBXPROJ" || echo "::warning::Could not find PRODUCT_BUNDLE_IDENTIFIER in $PBXPROJ — verify manually."
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter analyze
+        run: flutter analyze
+
+      - name: flutter test
+        run: flutter test
+
+      - name: flutter build ios --no-codesign (unsigned validation build — not an .ipa)
+        run: flutter build ios --no-codesign
+
+      - name: Upload generated iOS project (for inspection / committing back)
+        uses: actions/upload-artifact@v4
+        with:
+          name: cartok-ios-project
+          path: mobile/ios
+          if-no-files-found: error

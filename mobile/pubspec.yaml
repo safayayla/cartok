@@ -1,0 +1,57 @@
+name: cartok
+description: Cartok — the automotive garage and community app.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # State management
+  flutter_riverpod: ^2.5.1
+
+  # Networking
+  dio: ^5.7.0
+  dio_cookie_manager: ^3.1.1
+  cookie_jar: ^4.0.8
+  path_provider: ^2.1.4
+
+  # Secure token storage (Keychain / EncryptedSharedPreferences)
+  flutter_secure_storage: ^9.2.2
+
+  # Routing
+  go_router: ^14.2.7
+
+  # Fonts & UI polish
+  google_fonts: ^6.2.1
+  shimmer: ^3.0.0
+  cached_network_image: ^3.4.1
+  share_plus: ^13.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  mocktail: ^1.0.4
+
+flutter:
+  uses-material-design: true
+
+# Dependencies deliberately NOT included until the feature that needs them
+# actually exists (adding them speculatively just inflates install size and
+# CI time for zero benefit, and confuses the next reader):
+#   - flutter_svg: no screen renders an SVG yet — every visual is an icon or
+#     CSS-drawn shape so far.
+#   - qr_flutter: for the planned QR Garage Card feature, not yet built.
+#   - form_builder_validators, flutter_form_builder: forms so far use plain
+#     TextFormField + hand-written validators; add these if forms grow
+#     complex enough to need a builder framework.
+#   - freezed / freezed_annotation / json_serializable / json_annotation /
+#     build_runner: models so far are small and hand-written fromJson;
+#     revisit if/when model complexity justifies codegen.
+#   - intl: no date/number formatting exists yet (forum uses a small
+#     hand-written relative-time helper instead).
