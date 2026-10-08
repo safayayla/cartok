@@ -135,7 +135,20 @@ jobs:
           ec=$?
           cat /tmp/analyze.log
           if [ $ec -ne 0 ]; then
-            echo "::error::flutter analyze failed with exit $ec. Last output:%0A$(tail -c 3000 /tmp/analyze.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+            # A plain tail of the log can cut off mid-line before the file:line
+            # that actually matters, burying it under trailing "info"-level
+            # lints that aren't why this failed (seen in run 37835967249 —
+            # "9:25 • prefer_const_literals_to_create_immutables" with no file
+            # name, because the real "error •" line was truncated away).
+            # flutter analyze's default severity gate only fails the build on
+            # "error"/"warning" lines, never plain "info" ones, so isolate
+            # those specifically.
+            BLOCKING=$(grep -E "^\s*(error|warning) •" /tmp/analyze.log)
+            if [ -n "$BLOCKING" ]; then
+              echo "::error::flutter analyze failed with exit $ec. The actual error/warning-level issue(s) (not the info-level ones below them):%0A$(echo "$BLOCKING" | sed ':a;N;$!ba;s/\n/%0A/g')"
+            else
+              echo "::error::flutter analyze failed with exit $ec but no 'error •'/'warning •' line was found in its output — full tail:%0A$(tail -c 3000 /tmp/analyze.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+            fi
             exit $ec
           fi
 
@@ -273,7 +286,12 @@ jobs:
           ec=$?
           cat /tmp/analyze_ios.log
           if [ $ec -ne 0 ]; then
-            echo "::error::flutter analyze (ios) failed with exit $ec. Last output:%0A$(tail -c 3000 /tmp/analyze_ios.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+            BLOCKING=$(grep -E "^\s*(error|warning) •" /tmp/analyze_ios.log)
+            if [ -n "$BLOCKING" ]; then
+              echo "::error::flutter analyze (ios) failed with exit $ec. The actual error/warning-level issue(s) (not the info-level ones below them):%0A$(echo "$BLOCKING" | sed ':a;N;$!ba;s/\n/%0A/g')"
+            else
+              echo "::error::flutter analyze (ios) failed with exit $ec but no 'error •'/'warning •' line was found in its output — full tail:%0A$(tail -c 3000 /tmp/analyze_ios.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+            fi
             exit $ec
           fi
 
