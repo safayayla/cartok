@@ -1,3 +1,5 @@
+import 'cartok_forum_thread.dart';
+
 class CartokPostAuthor {
   const CartokPostAuthor({required this.id, required this.username, required this.displayName, this.avatarUrl});
 
