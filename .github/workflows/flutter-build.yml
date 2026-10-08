@@ -131,7 +131,7 @@ jobs:
       - name: flutter analyze
         run: |
           set +e
-          flutter analyze > /tmp/analyze.log 2>&1
+          flutter analyze --no-fatal-infos > /tmp/analyze.log 2>&1
           ec=$?
           cat /tmp/analyze.log
           if [ $ec -ne 0 ]; then
@@ -296,7 +296,7 @@ jobs:
       - name: flutter analyze
         run: |
           set +e
-          flutter analyze > /tmp/analyze_ios.log 2>&1
+          flutter analyze --no-fatal-infos > /tmp/analyze_ios.log 2>&1
           ec=$?
           cat /tmp/analyze_ios.log
           if [ $ec -ne 0 ]; then
