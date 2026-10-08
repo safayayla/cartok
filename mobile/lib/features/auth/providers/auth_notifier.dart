@@ -69,7 +69,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
         displayName: displayName,
       );
       // Registration succeeded — log in immediately for a seamless first run.
-      return login(email: email, password: password);
+      // Awaited (not just returned) so a login failure here is still caught
+      // by this function's own catch block below, instead of becoming an
+      // unhandled rejection that never resets state off AuthStatus.checking.
+      return await login(email: email, password: password);
     } catch (e) {
       state = AuthState(status: AuthStatus.unauthenticated, errorMessage: e.toString());
       return false;

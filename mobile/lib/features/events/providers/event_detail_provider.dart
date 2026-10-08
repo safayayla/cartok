@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/repository/auth_repository.dart';
 import '../models/cartok_event.dart';
 import '../repository/events_repository.dart';
+import 'event_list_provider.dart' show eventsRepositoryProvider;
 
 class EventDetailState {
   const EventDetailState({this.event, this.myStatus, this.isLoading = true, this.error});
@@ -75,7 +76,7 @@ class EventDetailNotifier extends StateNotifier<EventDetailState> {
     try {
       final confirmedStatus = await _repository.rsvp(_eventId, status);
       state = state.copyWith(myStatus: confirmedStatus);
-    } on ApiException catch (e) {
+    } on ApiException {
       state = state.copyWith(myStatus: previousStatus, event: previousEvent);
       rethrow;
     }
