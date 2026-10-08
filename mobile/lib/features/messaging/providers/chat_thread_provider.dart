@@ -95,6 +95,12 @@ class ChatThreadNotifier extends StateNotifier<ChatThreadState> {
     }
   }
 
+  /// Re-runs the initial load — used by the error state's "Retry" button.
+  /// Named distinctly from `_load` (private, constructor-only) so the retry
+  /// path is an explicit, public entry point rather than exposing the
+  /// internal method itself.
+  Future<void> refresh() => _load();
+
   Future<void> loadOlder() async {
     if (!state.hasMore || state.isLoadingMore) return;
     state = state.copyWith(isLoadingMore: true);

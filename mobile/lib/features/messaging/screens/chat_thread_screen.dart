@@ -92,7 +92,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
     if (state.error != null) {
       return CartokErrorState(
         message: state.error.toString(),
-        onRetry: () => ref.read(chatThreadProvider(widget.conversationId).notifier).load(),
+        onRetry: () => ref.read(chatThreadProvider(widget.conversationId).notifier).refresh(),
       );
     }
 
