@@ -30,7 +30,15 @@ dependencies:
   google_fonts: ^6.2.1
   shimmer: ^3.0.0
   cached_network_image: ^3.4.1
-  share_plus: ^13.1.0
+  # Pinned below 13.x: share_plus >=13.0.0 depends on win32 ^6.0.1, which
+  # conflicts with flutter_secure_storage ^9.2.2's transitive win32 ^5.0.0
+  # requirement (via flutter_secure_storage_windows) — a real version-solve
+  # failure, confirmed on an actual GitHub Actions runner with real pub.dev
+  # access (not assumed from this sandbox, which has none). ^12.0.2 is
+  # pub's own suggested resolution and still exposes the
+  # SharePlus.instance.share(ShareParams(...)) API this project uses in
+  # core/utils/share_helper.dart.
+  share_plus: ^12.0.2
 
 dev_dependencies:
   flutter_test:
