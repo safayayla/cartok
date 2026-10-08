@@ -143,12 +143,26 @@ jobs:
             # flutter analyze's default severity gate only fails the build on
             # "error"/"warning" lines, never plain "info" ones, so isolate
             # those specifically.
-            BLOCKING=$(grep -E "^\s*(error|warning) •" /tmp/analyze.log)
+            # Run 37836766758 showed an anchored "^\s*(error|warning) •"
+            # grep matching NOTHING even though the issue count visibly
+            # dropped (24 -> 20, confirming 4 real fixes from the previous
+            # commit landed) and exit was still 1 — dart.dev confirms
+            # info-level issues alone do NOT fail flutter analyze by
+            # default, so a real error/warning line must exist somewhere
+            # in that log; the exact anchoring/format just didn't match
+            # (possibly ANSI color codes, possibly different spacing).
+            # Normal `gh run view --log`/artifact downloads for this repo
+            # go through Azure blob storage, which this development
+            # sandbox's own egress policy blocks — unrelated to GitHub
+            # itself — so this annotation is the only way to see the real
+            # log content; made as resilient as possible rather than
+            # anchored to one exact format:
+            CLEAN=$(sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' /tmp/analyze.log)
+            BLOCKING=$(echo "$CLEAN" | grep -inE "error|warning")
             if [ -n "$BLOCKING" ]; then
-              echo "::error::flutter analyze failed with exit $ec. The actual error/warning-level issue(s) (not the info-level ones below them):%0A$(echo "$BLOCKING" | sed ':a;N;$!ba;s/\n/%0A/g')"
-            else
-              echo "::error::flutter analyze failed with exit $ec but no 'error •'/'warning •' line was found in its output — full tail:%0A$(tail -c 3000 /tmp/analyze.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+              echo "::error::flutter analyze failed with exit $ec. Line(s) mentioning error/warning (grep -i, unanchored):%0A$(echo "$BLOCKING" | head -c 2500 | sed ':a;N;$!ba;s/\n/%0A/g')"
             fi
+            echo "::error::flutter analyze failed with exit $ec. First 1200 chars of its (ANSI-stripped) output:%0A$(echo "$CLEAN" | head -c 1200 | sed ':a;N;$!ba;s/\n/%0A/g')"
             exit $ec
           fi
 
@@ -286,12 +300,12 @@ jobs:
           ec=$?
           cat /tmp/analyze_ios.log
           if [ $ec -ne 0 ]; then
-            BLOCKING=$(grep -E "^\s*(error|warning) •" /tmp/analyze_ios.log)
+            CLEAN=$(sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' /tmp/analyze_ios.log)
+            BLOCKING=$(echo "$CLEAN" | grep -inE "error|warning")
             if [ -n "$BLOCKING" ]; then
-              echo "::error::flutter analyze (ios) failed with exit $ec. The actual error/warning-level issue(s) (not the info-level ones below them):%0A$(echo "$BLOCKING" | sed ':a;N;$!ba;s/\n/%0A/g')"
-            else
-              echo "::error::flutter analyze (ios) failed with exit $ec but no 'error •'/'warning •' line was found in its output — full tail:%0A$(tail -c 3000 /tmp/analyze_ios.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+              echo "::error::flutter analyze (ios) failed with exit $ec. Line(s) mentioning error/warning (grep -i, unanchored):%0A$(echo "$BLOCKING" | head -c 2500 | sed ':a;N;$!ba;s/\n/%0A/g')"
             fi
+            echo "::error::flutter analyze (ios) failed with exit $ec. First 1200 chars of its (ANSI-stripped) output:%0A$(echo "$CLEAN" | head -c 1200 | sed ':a;N;$!ba;s/\n/%0A/g')"
             exit $ec
           fi
 
