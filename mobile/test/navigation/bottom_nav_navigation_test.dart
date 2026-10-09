@@ -63,7 +63,16 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(ForumCategoriesScreen), findsOneWidget);
-      expect(find.text('Forum'), findsOneWidget);
+      // Plain find.text('Forum') is ambiguous here: the bottom nav bar's
+      // own tab label is also the literal text "Forum" (unlike
+      // Marketplace, whose nav label is the shorter "Market"), so a
+      // fixed-type BottomNavigationBar showing all labels at once means
+      // two matching widgets exist simultaneously. Scope the match to the
+      // AppBar title specifically.
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: find.text('Forum')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('tapping the Marketplace tab navigates to MarketplaceBrowseScreen', (tester) async {
@@ -85,7 +94,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(EventListScreen), findsOneWidget);
-      expect(find.text('Events'), findsOneWidget);
+      // Same ambiguity as the Forum case above: the bottom nav bar's own
+      // "Events" tab label collides with the AppBar title. Scope to the
+      // AppBar.
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: find.text('Events')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('each tab keeps its own stack: Garage then Home returns to the feed', (tester) async {

@@ -39,8 +39,28 @@ void main() {
     );
   }
 
+  // The default flutter_test surface is a fixed 800x600 logical pixels.
+  // RegisterScreen's form (display name + username + email + password +
+  // submit button, each with its own label/helper text) is taller than
+  // that, so the "Create account" button renders below y=600 — outside
+  // the hit-testable viewport. Every tap on it was silently missing
+  // (flutter_test only *warns* on an off-screen tap, it doesn't fail the
+  // test by itself), so validation never actually ran: the 4 tests
+  // expecting error text all failed because no error text ever appeared,
+  // and the 1 test expecting *no* error text passed for the wrong reason
+  // (vacuously true, since nothing ran). A taller, narrower surface
+  // closer to a real phone viewport makes the button reachable so these
+  // tests exercise real validation instead of a no-op tap.
+  void useTallTestSurface(WidgetTester tester) {
+    tester.view.physicalSize = const Size(400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
   group('RegisterScreen validation', () {
     testWidgets('rejects an empty form with one error per required field', (tester) async {
+      useTallTestSurface(tester);
       await tester.pumpWidget(wrap(const RegisterScreen()));
 
       await tester.tap(find.widgetWithText(ElevatedButton, 'Create account'));
@@ -53,6 +73,7 @@ void main() {
     });
 
     testWidgets('rejects a username with uppercase letters or symbols', (tester) async {
+      useTallTestSurface(tester);
       await tester.pumpWidget(wrap(const RegisterScreen()));
 
       await tester.enterText(find.widgetWithText(TextFormField, 'Username'), 'Not-Valid!');
@@ -63,6 +84,7 @@ void main() {
     });
 
     testWidgets('rejects an email without "@"', (tester) async {
+      useTallTestSurface(tester);
       await tester.pumpWidget(wrap(const RegisterScreen()));
 
       await tester.enterText(find.widgetWithText(TextFormField, 'Email'), 'nope');
@@ -73,6 +95,7 @@ void main() {
     });
 
     testWidgets('rejects a password missing a number or mixed case', (tester) async {
+      useTallTestSurface(tester);
       await tester.pumpWidget(wrap(const RegisterScreen()));
 
       await tester.enterText(find.widgetWithText(TextFormField, 'Password'), 'alllowercase');
@@ -83,6 +106,7 @@ void main() {
     });
 
     testWidgets('accepts a fully valid form with no validation errors shown', (tester) async {
+      useTallTestSurface(tester);
       await tester.pumpWidget(wrap(const RegisterScreen()));
 
       await tester.enterText(find.widgetWithText(TextFormField, 'Display name'), 'Jamie Driver');
