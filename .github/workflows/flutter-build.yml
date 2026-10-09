@@ -173,7 +173,28 @@ jobs:
           ec=$?
           cat /tmp/test.log
           if [ $ec -ne 0 ]; then
-            echo "::error::flutter test failed with exit $ec. Last output:%0A$(tail -c 3000 /tmp/test.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+            # A blind tail of the whole log only ever showed the LAST
+            # failing test's stack trace — in run 37837717534, "15 passed,
+            # 6 failed" but only 1 of those 6 traces survived a 3000-char
+            # tail, the rest pushed out of the window by later passing-test
+            # output. flutter test wraps each failure in its own
+            # "::group::❌ <path>: <name> (failed)" / "::endgroup::" pair;
+            # split on those markers instead and emit one annotation per
+            # failure so every one is actually visible, not just the last.
+            CLEAN=$(sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' /tmp/test.log)
+            echo "$CLEAN" | awk '
+              /^::group::❌/{p=1; buf=""}
+              p{buf = buf $0 "\n"}
+              /^::endgroup::/{if(p){printf "%s%c", buf, 0; p=0}}
+            ' > /tmp/test_failures.bin
+            FAILCOUNT=0
+            while IFS= read -r -d '' block; do
+              FAILCOUNT=$((FAILCOUNT+1))
+              echo "::error::flutter test failure $FAILCOUNT:%0A$(printf '%s' "$block" | head -c 2500 | sed ':a;N;$!ba;s/\n/%0A/g')"
+            done < /tmp/test_failures.bin
+            if [ "$FAILCOUNT" -eq 0 ]; then
+              echo "::error::flutter test failed with exit $ec but no ❌ group markers were found (likely failed before any test ran) — raw tail:%0A$(echo "$CLEAN" | tail -c 3000 | sed ':a;N;$!ba;s/\n/%0A/g')"
+            fi
             exit $ec
           fi
 
@@ -316,7 +337,24 @@ jobs:
           ec=$?
           cat /tmp/test_ios.log
           if [ $ec -ne 0 ]; then
-            echo "::error::flutter test (ios) failed with exit $ec. Last output:%0A$(tail -c 3000 /tmp/test_ios.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+            # Same reasoning as the Android job's flutter test step: split
+            # on flutter test's own per-failure ::group::❌/::endgroup::
+            # markers and emit one annotation per failure instead of a
+            # blind tail that only shows the last one.
+            CLEAN=$(sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' /tmp/test_ios.log)
+            echo "$CLEAN" | awk '
+              /^::group::❌/{p=1; buf=""}
+              p{buf = buf $0 "\n"}
+              /^::endgroup::/{if(p){printf "%s%c", buf, 0; p=0}}
+            ' > /tmp/test_failures_ios.bin
+            FAILCOUNT=0
+            while IFS= read -r -d '' block; do
+              FAILCOUNT=$((FAILCOUNT+1))
+              echo "::error::flutter test (ios) failure $FAILCOUNT:%0A$(printf '%s' "$block" | head -c 2500 | sed ':a;N;$!ba;s/\n/%0A/g')"
+            done < /tmp/test_failures_ios.bin
+            if [ "$FAILCOUNT" -eq 0 ]; then
+              echo "::error::flutter test (ios) failed with exit $ec but no ❌ group markers were found (likely failed before any test ran) — raw tail:%0A$(echo "$CLEAN" | tail -c 3000 | sed ':a;N;$!ba;s/\n/%0A/g')"
+            fi
             exit $ec
           fi
 
